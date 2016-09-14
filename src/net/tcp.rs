@@ -73,7 +73,7 @@ impl TcpListener {
             match self.io.get_ref().accept() {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
-                        self.io.need_read();
+                        try!(self.io.need_read());
                     }
                     return Err(e)
                 },
@@ -87,7 +87,7 @@ impl TcpListener {
                             });
                         tx.complete(res);
                         Ok(())
-                    });
+                    }).expect("failed to spawn");
                     self.pending_accept = Some(rx);
                     // continue to polling the `rx` at the beginning of the loop
                 }

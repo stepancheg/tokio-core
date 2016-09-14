@@ -71,6 +71,8 @@ impl IoToken {
     /// receive further notifications it will need to call `schedule_read`
     /// again.
     ///
+    /// This function returns an error if reactor is destroyed.
+    ///
     /// > **Note**: This method should generally not be used directly, but
     /// >           rather the `ReadinessStream` type should be used instead.
     ///
@@ -82,8 +84,8 @@ impl IoToken {
     ///
     /// This function will also panic if there is not a currently running future
     /// task.
-    pub fn schedule_read(&self, handle: &Remote) {
-        handle.send(Message::Schedule(self.token, task::park(), Direction::Read));
+    pub fn schedule_read(&self, handle: &Remote) -> io::Result<()> {
+        handle.send(Message::Schedule(self.token, task::park(), Direction::Read))
     }
 
     /// Schedule the current future task to receive a notification when the
@@ -98,6 +100,8 @@ impl IoToken {
     /// receive further notifications it will need to call `schedule_write`
     /// again.
     ///
+    /// This function returns an error if reactor is destroyed.
+    ///
     /// > **Note**: This method should generally not be used directly, but
     /// >           rather the `ReadinessStream` type should be used instead.
     ///
@@ -109,8 +113,8 @@ impl IoToken {
     ///
     /// This function will also panic if there is not a currently running future
     /// task.
-    pub fn schedule_write(&self, handle: &Remote) {
-        handle.send(Message::Schedule(self.token, task::park(), Direction::Write));
+    pub fn schedule_write(&self, handle: &Remote) -> io::Result<()> {
+        handle.send(Message::Schedule(self.token, task::park(), Direction::Write))
     }
 
     /// Unregister all information associated with a token on an event loop,
@@ -127,6 +131,8 @@ impl IoToken {
     /// ensure that the callbacks are **not** invoked, so pending scheduled
     /// callbacks cannot be relied upon to get called.
     ///
+    /// This function returns an error if reactor is destroyed.
+    ///
     /// > **Note**: This method should generally not be used directly, but
     /// >           rather the `ReadinessStream` type should be used instead.
     ///
@@ -135,7 +141,7 @@ impl IoToken {
     /// This function will panic if the event loop this handle is associated
     /// with has gone away, or if there is an error communicating with the event
     /// loop.
-    pub fn drop_source(&self, handle: &Remote) {
-        handle.send(Message::DropSource(self.token));
+    pub fn drop_source(&self, handle: &Remote) -> io::Result<()> {
+        handle.send(Message::DropSource(self.token))
     }
 }

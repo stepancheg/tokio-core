@@ -92,8 +92,11 @@ impl<E> PollEvented<E> {
         if self.readiness.load(Ordering::SeqCst) & 1 != 0 {
             Async::Ready(())
         } else {
-            self.token.schedule_read(&self.handle);
-            Async::NotReady
+            match self.token.schedule_read(&self.handle) {
+                Ok(()) => Async::NotReady,
+                // next read will return error
+                Err(_) => Async::Ready(()),
+            }
         }
     }
 
@@ -112,8 +115,12 @@ impl<E> PollEvented<E> {
         if self.readiness.load(Ordering::SeqCst) & 2 != 0 {
             Async::Ready(())
         } else {
-            self.token.schedule_write(&self.handle);
-            Async::NotReady
+            // ignore error, will be handled in need_write
+            match self.token.schedule_write(&self.handle) {
+                Ok(()) => Async::NotReady,
+                // next read will return error
+                Err(_) => Async::Ready(()),
+            }
         }
     }
 
@@ -132,7 +139,9 @@ impl<E> PollEvented<E> {
     /// Note that it is also only valid to call this method if `poll_read`
     /// previously indicated that the object is readable. That is, this function
     /// must always be paired with calls to `poll_read` previously.
-    pub fn need_read(&self) {
+    ///
+    /// This function returns an error if reactor is destroyed.
+    pub fn need_read(&self) -> io::Result<()> {
         self.readiness.fetch_and(!1, Ordering::SeqCst);
         self.token.schedule_read(&self.handle)
     }
@@ -152,7 +161,9 @@ impl<E> PollEvented<E> {
     /// Note that it is also only valid to call this method if `poll_write`
     /// previously indicated that the object is writeable. That is, this function
     /// must always be paired with calls to `poll_write` previously.
-    pub fn need_write(&self) {
+    ///
+    /// This function returns an error if reactor is destroyed.
+    pub fn need_write(&self) -> io::Result<()> {
         self.readiness.fetch_and(!2, Ordering::SeqCst);
         self.token.schedule_write(&self.handle)
     }
@@ -183,7 +194,7 @@ impl<E: Read> Read for PollEvented<E> {
         }
         let r = self.get_mut().read(buf);
         if is_wouldblock(&r) {
-            self.need_read();
+            try!(self.need_read());
         }
         return r
     }
@@ -196,7 +207,7 @@ impl<E: Write> Write for PollEvented<E> {
         }
         let r = self.get_mut().write(buf);
         if is_wouldblock(&r) {
-            self.need_write();
+            try!(self.need_write());
         }
         return r
     }
@@ -207,7 +218,7 @@ impl<E: Write> Write for PollEvented<E> {
         }
         let r = self.get_mut().flush();
         if is_wouldblock(&r) {
-            self.need_write();
+            try!(self.need_write());
         }
         return r
     }
@@ -232,7 +243,7 @@ impl<'a, E> Read for &'a PollEvented<E>
         }
         let r = self.get_ref().read(buf);
         if is_wouldblock(&r) {
-            self.need_read();
+            try!(self.need_read());
         }
         return r
     }
@@ -247,7 +258,7 @@ impl<'a, E> Write for &'a PollEvented<E>
         }
         let r = self.get_ref().write(buf);
         if is_wouldblock(&r) {
-            self.need_write();
+            try!(self.need_write());
         }
         return r
     }
@@ -258,7 +269,7 @@ impl<'a, E> Write for &'a PollEvented<E>
         }
         let r = self.get_ref().flush();
         if is_wouldblock(&r) {
-            self.need_write();
+            try!(self.need_write());
         }
         return r
     }
@@ -285,6 +296,7 @@ fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
 
 impl<E> Drop for PollEvented<E> {
     fn drop(&mut self) {
-        self.token.drop_source(&self.handle);
+        // Ignore error
+        drop(self.token.drop_source(&self.handle));
     }
 }

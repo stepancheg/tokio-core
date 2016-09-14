@@ -25,11 +25,13 @@ impl TimeoutToken {
 
     /// Updates a previously added timeout to notify a new task instead.
     ///
+    /// This function returns an error if reactor is destroyed.
+    ///
     /// # Panics
     ///
     /// This method will panic if the timeout specified was not created by this
     /// loop handle's `add_timeout` method.
-    pub fn update_timeout(&self, handle: &Remote) {
+    pub fn update_timeout(&self, handle: &Remote) -> io::Result<()> {
         handle.send(Message::UpdateTimeout(self.token, task::park()))
     }
 
@@ -39,17 +41,19 @@ impl TimeoutToken {
     ///
     /// This method will panic if the timeout specified was not created by this
     /// loop handle's `add_timeout` method.
-    pub fn reset_timeout(&mut self, at: Instant, handle: &Remote) {
-        handle.send(Message::ResetTimeout(self.token, at));
+    pub fn reset_timeout(&mut self, at: Instant, handle: &Remote) -> io::Result<()> {
+        handle.send(Message::ResetTimeout(self.token, at))
     }
 
     /// Cancel a previously added timeout.
+    ///
+    /// This function returns an error if reactor is destroyed.
     ///
     /// # Panics
     ///
     /// This method will panic if the timeout specified was not created by this
     /// loop handle's `add_timeout` method.
-    pub fn cancel_timeout(&self, handle: &Remote) {
+    pub fn cancel_timeout(&self, handle: &Remote) -> io::Result<()> {
         debug!("cancel timeout {}", self.token);
         handle.send(Message::CancelTimeout(self.token))
     }

@@ -412,6 +412,27 @@ impl Core {
     }
 }
 
+impl Drop for Core {
+    fn drop(&mut self) {
+        // Close the receiver, so all schedule operations will be rejected.
+        // Do it explicitly before unparking to avoid race condition.
+        channel::close_receiver(&self.rx);
+
+        // Unpark all tasks.
+        // It has no effect for tasks in this event loop,
+        // however tasks in another executors get an error
+        // when they do `poll` right after wakeup.
+        for io in self.inner.borrow_mut().io_dispatch.iter_mut() {
+            if let Some(ref mut reader) = io.reader {
+                reader.unpark();
+            }
+            if let Some(ref mut writer) = io.writer {
+                writer.unpark();
+            }
+        }
+    }
+}
+
 impl Inner {
     fn add_source(&mut self, source: &mio::Evented)
                   -> io::Result<(Arc<AtomicUsize>, usize)> {
@@ -519,7 +540,7 @@ impl Inner {
 }
 
 impl Remote {
-    fn send(&self, msg: Message) {
+    fn send(&self, msg: Message) -> io::Result<()> {
         self.with_loop(|lp| {
             match lp {
                 Some(lp) => {
@@ -527,18 +548,12 @@ impl Remote {
                     // that our message is processed "in order"
                     lp.consume_queue();
                     lp.notify(msg);
+                    Ok(())
                 }
                 None => {
-                    match self.tx.send(msg) {
-                        Ok(()) => {}
-
-                        // This should only happen when there was an error
-                        // writing to the pipe to wake up the event loop,
-                        // hopefully that never happens
-                        Err(e) => {
-                            panic!("error sending message to event loop: {}", e)
-                        }
-                    }
+                    // May return an error if receiver is closed
+                    // or if there was an error writing to the pipe.
+                    self.tx.send(msg)
                 }
             }
         })
@@ -569,7 +584,9 @@ impl Remote {
     ///
     /// Note that while the closure, `F`, requires the `Send` bound as it might
     /// cross threads, the future `R` does not.
-    pub fn spawn<F, R>(&self, f: F)
+    ///
+    /// This function returns an error if reactor is destroyed.
+    pub fn spawn<F, R>(&self, f: F) -> io::Result<()>
         where F: FnOnce(&Handle) -> R + Send + 'static,
               R: IntoFuture<Item=(), Error=()>,
               R::Future: 'static,
@@ -577,7 +594,7 @@ impl Remote {
         self.send(Message::Run(Box::new(|lp: &Core| {
             let f = f(&lp.handle());
             lp.inner.borrow_mut().spawn(Box::new(f.into_future()));
-        })));
+        })))
     }
 }
 

@@ -114,7 +114,7 @@ impl<T> Stream for Receiver<T> {
         match self.rx.get_ref().try_recv() {
             Ok(t) => Ok(Async::Ready(Some(t))),
             Err(TryRecvError::Empty) => {
-                self.rx.need_read();
+                try!(self.rx.need_read());
                 Ok(Async::NotReady)
             }
             Err(TryRecvError::Disconnected) => Ok(Async::Ready(None)),

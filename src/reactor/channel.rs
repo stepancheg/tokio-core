@@ -10,25 +10,35 @@ use std::cell::Cell;
 use std::io;
 use std::marker;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 use mio;
 use mio::channel::{ctl_pair, SenderCtl, ReceiverCtl};
 
 use mpsc_queue::{Queue, PopResult};
 
+struct Inner<T> {
+    queue: Queue<T>,
+    receiver_alive: AtomicBool,
+}
+
 pub struct Sender<T> {
     ctl: SenderCtl,
-    inner: Arc<Queue<T>>,
+    inner: Arc<Inner<T>>,
 }
 
 pub struct Receiver<T> {
     ctl: ReceiverCtl,
-    inner: Arc<Queue<T>>,
+    inner: Arc<Inner<T>>,
     _marker: marker::PhantomData<Cell<()>>, // this type is not Sync
 }
 
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
-    let inner = Arc::new(Queue::new());
+    let inner = Arc::new(Inner {
+        queue: Queue::new(),
+        receiver_alive: AtomicBool::new(true),
+    });
     let (tx, rx) = ctl_pair();
 
     let tx = Sender {
@@ -45,7 +55,10 @@ pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
 
 impl<T> Sender<T> {
     pub fn send(&self, data: T) -> io::Result<()> {
-        self.inner.push(data);
+        if !self.inner.receiver_alive.load(Ordering::SeqCst) {
+            return Err(io::Error::new(io::ErrorKind::Other, "receiver has been closed"));
+        }
+        self.inner.queue.push(data);
         self.ctl.inc()
     }
 }
@@ -57,7 +70,7 @@ impl<T> Receiver<T> {
         //
         // We, however, are the only thread with a `Receiver<T>` because this
         // type is not `Sync`. and we never handed out another instance.
-        match unsafe { self.inner.pop() } {
+        match unsafe { self.inner.queue.pop() } {
             PopResult::Data(t) => {
                 try!(self.ctl.dec());
                 Ok(Some(t))
@@ -85,6 +98,13 @@ impl<T> Receiver<T> {
     }
 }
 
+// Close receiver, so further send operations would fail.
+// This function is used internally in `Core` and is not exposed as public API.
+pub fn close_receiver<T>(receiver: &Receiver<T>) {
+    receiver.inner.as_ref().receiver_alive.store(false, Ordering::SeqCst);
+}
+
+
 // Just delegate everything to `self.ctl`
 impl<T> mio::Evented for Receiver<T> {
     fn register(&self,
@@ -105,6 +125,12 @@ impl<T> mio::Evented for Receiver<T> {
 
     fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
         self.ctl.deregister(poll)
+    }
+}
+
+impl<T> Drop for Receiver<T> {
+    fn drop(&mut self) {
+        close_receiver(self);
     }
 }
 

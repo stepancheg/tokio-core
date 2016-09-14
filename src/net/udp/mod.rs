@@ -106,7 +106,7 @@ impl UdpSocket {
         match self.io.get_ref().send_to(buf, target) {
             Ok(Some(n)) => Ok(n),
             Ok(None) => {
-                self.io.need_write();
+                try!(self.io.need_write());
                 Err(mio::would_block())
             }
             Err(e) => Err(e),
@@ -149,7 +149,7 @@ impl UdpSocket {
         match self.io.get_ref().recv_from(buf) {
             Ok(Some(n)) => Ok(n),
             Ok(None) => {
-                self.io.need_read();
+                try!(self.io.need_read());
                 Err(mio::would_block())
             }
             Err(e) => Err(e),

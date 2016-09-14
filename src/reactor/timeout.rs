@@ -58,7 +58,7 @@ impl Future for Timeout {
         if self.when <= now {
             Ok(Async::Ready(()))
         } else {
-            self.token.update_timeout(&self.handle);
+            try!(self.token.update_timeout(&self.handle));
             Ok(Async::NotReady)
         }
     }
@@ -66,6 +66,7 @@ impl Future for Timeout {
 
 impl Drop for Timeout {
     fn drop(&mut self) {
-        self.token.cancel_timeout(&self.handle);
+        // Ignore error
+        drop(self.token.cancel_timeout(&self.handle));
     }
 }

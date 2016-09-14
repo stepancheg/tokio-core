@@ -24,7 +24,7 @@ fn simple() {
             tx2.complete(2);
             Ok(())
         })
-    });
+    }).expect("failed to spawn");
 
     assert_eq!(lp.run(rx1.join(rx2)).unwrap(), (1, 2));
 }
@@ -68,7 +68,7 @@ fn spawn_in_poll() {
                 tx2.complete(2);
                 Ok(())
             })
-        });
+        }).expect("failed to spawn");
         Ok(())
     }));
 

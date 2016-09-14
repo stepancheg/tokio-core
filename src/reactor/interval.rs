@@ -66,10 +66,10 @@ impl Stream for Interval {
         let now = Instant::now();
         if self.next <= now {
             self.next = next_interval(self.next, now, self.interval);
-            self.token.reset_timeout(self.next, &self.handle);
+            try!(self.token.reset_timeout(self.next, &self.handle));
             Ok(Async::Ready(Some(())))
         } else {
-            self.token.update_timeout(&self.handle);
+            try!(self.token.update_timeout(&self.handle));
             Ok(Async::NotReady)
         }
     }
@@ -77,7 +77,8 @@ impl Stream for Interval {
 
 impl Drop for Interval {
     fn drop(&mut self) {
-        self.token.cancel_timeout(&self.handle);
+        // Ignore error
+        drop(self.token.cancel_timeout(&self.handle));
     }
 }
 
