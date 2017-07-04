@@ -3,6 +3,9 @@ extern crate env_logger;
 extern crate futures;
 
 use std::any::Any;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -144,4 +147,37 @@ fn spawn_in_drop() {
     });
 
     lp.run(rx).unwrap();
+}
+
+#[test]
+fn run_background() {
+    let mut core = Core::new().expect("Core::new");
+
+    core.run_background(None);
+    core.run_background(Some(Duration::from_secs(100000000)));
+
+    let (tx, rx) = oneshot::channel();
+
+    let executed = Arc::new(AtomicBool::new(false));
+    let executed_copy = executed.clone();
+
+    let future = rx
+        .map(move |_| {
+            executed_copy.store(true, Ordering::SeqCst)
+        })
+        .map_err(|_| unreachable!());
+
+    core.handle().spawn(future);
+
+    core.run_background(Some(Duration::from_millis(1)));
+
+    thread::spawn(move || {
+        tx.send(1).expect("send");
+    });
+
+    core.run_background(None);
+
+    assert!(executed.load(Ordering::SeqCst));
+
+    core.run_background(None);
 }

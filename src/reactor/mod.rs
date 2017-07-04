@@ -242,6 +242,31 @@ impl Core {
         }
     }
 
+    /// Run spawned background tasks while there is at least one task registered.
+    ///
+    /// `max_wait` param specifies max time this function executes.
+    /// After specified duration this function simply returns,
+    /// and remaining background tasks kept registered.
+    ///
+    /// # Panics
+    ///
+    /// This function will **not** catch panic from spawned tasks.
+    pub fn run_background(&mut self, max_wait: Option<Duration>) {
+        let deadline = max_wait.map(|max_wait| Instant::now() + max_wait);
+        while !self.inner.borrow_mut().task_dispatch.is_empty() {
+            let turn_max_wait = if let Some(deadline) = deadline {
+                let now = Instant::now();
+                if now >= deadline {
+                    return;
+                }
+                Some(deadline - now)
+            } else {
+                None
+            };
+            self.turn(turn_max_wait);
+        }
+    }
+
     /// Performs one iteration of the event loop, blocking on waiting for events
     /// for at most `max_wait` (forever if `None`).
     ///
